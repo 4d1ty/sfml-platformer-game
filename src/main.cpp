@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <memory>
+#include <cmath>
 #include <iostream>
 
 #define WIDTH 800
@@ -56,7 +57,7 @@ public:
 
 	sf::Color backgroundColor;
 	sf::Clock clock;
-	sf::Vector2f gravity{ 0.f, 10000.f };
+	sf::Vector2f gravity{ 0.f, 10.f };
 	sf::View view;
 	std::vector<StaticBody> staticBodies;
 };
@@ -70,12 +71,12 @@ public:
 		this->setFillColor(sf::Color::White);
 	}
 	sf::Vector2f velocity{ 0.f, 0.f };
-	sf::Vector2f acceleration{ 100.f, 0.f };
-	sf::Vector2f deacceleration{ 300.f, 0.f };
-	float speed = 1000.f;
+	float acceleration{ 1000.f };
+	float deacceleration{ 300.f };
+	float moveSpeed = 1000.f;
+	float currentSpeed = 0.f;
 	float jump = 2500.f;
 	sf::Angle normal = sf::degrees(-90);
-	bool isGrounded = false;
 	World& world;
 
 
@@ -84,22 +85,32 @@ public:
 	}
 
 	void onUpdate(float deltaTime) {
-		this->velocity = sf::Vector2f{ 0.f, 0.f }; // Have a natural decelaration.
-
 		float horizontal = (
 			InputManager::isKeyPressed(sf::Keyboard::Key::D) -
 			InputManager::isKeyPressed(sf::Keyboard::Key::A)
 			);
 
-		velocity.x = horizontal * speed;
+		if (horizontal != 0) {
 
-		if (InputManager::isKeyPressed(sf::Keyboard::Key::Space) && isGrounded) {
+			currentSpeed = std::lerp(currentSpeed, moveSpeed * horizontal, acceleration * deltaTime);
+		}
+		else {
+			currentSpeed = std::lerp(currentSpeed, 0, deacceleration * deltaTime);
+
+		}
+
+
+		velocity.x = currentSpeed;
+
+
+		if (InputManager::isKeyPressed(sf::Keyboard::Key::Space) && isGrounded()) {
 			this->velocity = sf::Vector2{
-			0.f,
+			std::cos(this->normal.asRadians()),
 			std::sin(this->normal.asRadians())
 			} *jump;
 		}
 
+		// DEBUG
 		if (InputManager::isKeyPressed(sf::Keyboard::Key::Down)) {
 			this->velocity = sf::Vector2{
 				0.f,
@@ -108,20 +119,26 @@ public:
 		}
 
 
-
-		if (!this->isGrounded)
-			velocity += world.gravity;
+		if (this->isGrounded()) {
+			if (this->velocity.y > 0) {
+				this->velocity.y = 0;
+			}
+		}
+		else {
+			velocity += world.gravity * static_cast<float>(!this->isGrounded());
+		}
 
 		this->move(velocity * deltaTime);
-		bool foundGround = false;
+
+	}
+
+	bool isGrounded() {
+		return static_cast<bool>(this->onCollision().first);
+	}
+
+	std::pair<std::optional<sf::FloatRect>, StaticBody> onCollision() {
 		for (auto& staticBody : this->world.staticBodies) {
-			if (this->getGlobalBounds().findIntersection(staticBody.getGlobalBounds())) {
-				velocity.y = 0.f;
-				isGrounded = true;
-			}
-			else {
-				isGrounded = false;
-			}
+			return std::pair<std::optional<sf::FloatRect>, StaticBody>(this->getGlobalBounds().findIntersection(staticBody.getGlobalBounds()), staticBody);
 		}
 	}
 
